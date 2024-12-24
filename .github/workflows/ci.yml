@@ -1,0 +1,53 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main  # или ваша основная ветка
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build project
+        run: dotnet build --configuration Release
+
+      - name: Run tests and collect coverage
+        run: dotnet test --collect:"XPlat Code Coverage" --configuration Release
+
+      - name: Publish coverage report
+        run: |
+          # Убедитесь, что вы установили dotnet-reportgenerator-globaltool в вашем проекте
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+          reportgenerator -reports:**/coverage.cobertura.xml -targetdir:coverage-report -reporttypes:Html
+          
+      - name: Check coverage percentage
+        run: |
+          coverage=$(grep -oP '(?<=<line-rate>)[^<]+' coverage-report/index.html | head -n 1)
+          coverage_percentage=$(echo "$coverage * 100" | bc)
+          echo "Coverage percentage is $coverage_percentage%"
+          if (( $(echo "$coverage < 0.9" | bc -l) )); then
+            echo "Coverage is below 90%"
+            exit 1
+          fi
+
+      - name: Comment coverage report on PR
+        uses: unsplash/comment-on-pr@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## Coverage Report
+            Coverage percentage is $coverage_percentage%
+            [View detailed report](./coverage-report/index.html)
